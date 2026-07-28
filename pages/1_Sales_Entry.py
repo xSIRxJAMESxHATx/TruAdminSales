@@ -7,10 +7,12 @@ from utils.theme import apply_theme
 from utils.db import (
     init_db, archive_service, get_archived_services,
     archive_channel, get_archived_channels, get_discounts,
-    archive_pattern, create_submission, get_config, get_tax_rate
+    archive_pattern, create_submission, get_config, get_tax_rate,
+    get_employee, upsert_employee, list_employees
 )
 from utils.pricing import calc_service_line, calc_order_totals, pattern_from_selection
 from utils.print_form import build_blank_form_pdf
+from utils.validation import validate_submission
 
 st.set_page_config(page_title="Sales Entry", page_icon="📝", layout="wide")
 apply_theme()
@@ -196,12 +198,35 @@ with st.container(border=True):
     r1, r2, r3 = st.columns(3)
     with r1:
         emp_id = st.text_input("Employee ID *", key="emp_id")
+        roster = get_employee(emp_id) if (emp_id or "").strip() else None
+        if roster:
+            st.caption(
+                f"✓ Roster: **{roster.get('rep_first','')} {roster.get('rep_last','')}** · "
+                f"{roster.get('region') or '—'} · branch {roster.get('branch') or roster.get('business_unit') or '—'}"
+            )
+            # Prefill session once when emp_id changes
+            if st.session_state.get("_roster_emp") != emp_id:
+                st.session_state["_roster_emp"] = emp_id
+                st.session_state["rep_first"] = roster.get("rep_first") or st.session_state.get("rep_first", "")
+                st.session_state["rep_last"] = roster.get("rep_last") or st.session_state.get("rep_last", "")
+                st.session_state["rep_email"] = roster.get("rep_email") or st.session_state.get("rep_email", "")
+                if roster.get("business_unit"):
+                    st.session_state["bu"] = roster.get("business_unit")
+                if roster.get("region"):
+                    st.session_state["region"] = roster.get("region")
+                if roster.get("branch"):
+                    st.session_state["branch"] = roster.get("branch")
         rep_first = st.text_input("Rep First Name *", key="rep_first")
         rep_last = st.text_input("Rep Last Name *", key="rep_last")
         rep_email = st.text_input("Rep Email (for status notifications)", key="rep_email", placeholder="you@company.com")
     with r2:
         bus_units = get_config("business_units")
         business_unit = st.selectbox("Business Unit *", options=[""] + bus_units, key="bu")
+        branch = st.text_input(
+            "Branch (normalized to emp ID)",
+            key="branch",
+            help="Stored with this employee ID for future auto-fill",
+        )
         regions = get_config("regions")
         region = st.selectbox("Region *", options=[""] + regions, key="region")
         channels = get_archived_channels()
@@ -240,28 +265,44 @@ st.caption("⚠️ Do not send any sensitive customer or payment information on 
 
 # ─── Validation & Submit ─────────────────────────────────────────────────────
 def validate() -> list:
-    errs = []
-    if not cust_first.strip(): errs.append("Customer first name required")
-    if not cust_last.strip(): errs.append("Customer last name required")
-    if not cust_phone.strip(): errs.append("Phone number required")
-    if not cust_street.strip(): errs.append("Street address required")
-    if not cust_city.strip(): errs.append("City required")
-    if not cust_state or len(cust_state) != 2: errs.append("Valid 2-letter state required")
-    if not cust_zip.strip(): errs.append("ZIP required")
-    if not emp_id.strip(): errs.append("Employee ID required")
-    if not rep_first.strip() or not rep_last.strip(): errs.append("Rep name required")
-    if not business_unit: errs.append("Business unit required")
-    if not region: errs.append("Region required")
-    if not payment_type: errs.append("Select a payment type")
-    if not exception_reason: errs.append("Exception reason required")
-    if not all_services: errs.append("At least one service with a name is required")
-    for s in all_services:
-        if s.get("price", 0) <= 0:
-            errs.append(f"Service '{s.get('name')}' needs a price > 0")
-    return errs
+    """Assemble payload fragment and run shared validation rules."""
+    draft = {
+        "cust_first": cust_first,
+        "cust_last": cust_last,
+        "cust_phone": cust_phone,
+        "cust_mobile": cust_mobile,
+        "cust_email": cust_email,
+        "cust_street": cust_street,
+        "cust_city": cust_city,
+        "cust_state": cust_state,
+        "cust_zip": cust_zip,
+        "property_sqft": property_sqft,
+        "services": all_services,
+        "emp_id": emp_id,
+        "rep_first": rep_first,
+        "rep_last": rep_last,
+        "rep_email": rep_email if "rep_email" in dir() else "",
+        "business_unit": business_unit,
+        "region": region,
+        "payment_type": payment_type,
+        "prepay_pct": prepay_pct if pay_prepay else 0,
+        "exception_reason": exception_reason,
+        "sales_notes": sales_notes,
+        "subtotal": order["subtotal"],
+        "total_discount": order["total_discount"],
+        "total_tax": order["total_tax"],
+        "grand_total": order["grand_total"],
+    }
+    result = validate_submission(draft)
+    # Surface warnings in UI separately via session
+    st.session_state["_val_warnings"] = result.warnings
+    return result.errors
+
 
 if st.button("🚀 Submit Exception Sale", type="primary", use_container_width=True):
     errors = validate()
+    for w in st.session_state.get("_val_warnings") or []:
+        st.warning(w)
     if errors:
         for e in errors:
             st.error(e)
@@ -294,6 +335,7 @@ if st.button("🚀 Submit Exception Sale", type="primary", use_container_width=T
             "rep_last": rep_last.strip(),
             "rep_email": (rep_email or "").strip(),
             "business_unit": business_unit,
+            "branch": (branch or business_unit or "").strip(),
             "region": region,
             "sales_channel": sales_channel.strip() if sales_channel else "",
             "payment_type": payment_type,

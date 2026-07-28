@@ -13,7 +13,11 @@ init_db()
 st.title("🔍 Audit Queue")
 st.caption("Sales requiring customer contact or extra verification before final status.")
 
-actor = st.sidebar.text_input("Your name / ID (audit log)", value="auditor", key="aud_actor")
+actor = st.sidebar.text_input("Your full name (required)", value="", key="aud_actor", placeholder="e.g. Jane Smith")
+can_process = bool((actor or "").strip())
+if not can_process:
+    st.sidebar.warning("Enter your name before completing audit actions.")
+    st.warning("Enter your name in the sidebar to enable audit actions.")
 
 subs = get_submissions(status="audit", limit=200)
 st.metric("Items in audit", len(subs))
@@ -53,15 +57,20 @@ for s in subs:
         b1, b2 = st.columns(2)
         with b1:
             if st.button("✅ Complete after audit", key=f"aud_ok_{s['id']}", type="primary", use_container_width=True):
-                update_submission_status(s["id"], "completed", actor, notes)
-                st.success("Completed — rep notified.")
-                st.rerun()
+                if not can_process:
+                    st.error("Enter your name in the sidebar first.")
+                else:
+                    update_submission_status(s["id"], "completed", actor.strip(), notes)
+                    st.success("Completed — rep notified.")
+                    st.rerun()
         with b2:
             kr = st.selectbox("Kick reason", [""] + kick_reasons, key=f"aud_kr_{s['id']}")
             if st.button("❌ Kick after audit", key=f"aud_kick_{s['id']}", use_container_width=True):
-                if not kr:
+                if not can_process:
+                    st.error("Enter your name in the sidebar first.")
+                elif not kr:
                     st.error("Select kick reason")
                 else:
-                    update_submission_status(s["id"], "kicked", actor, notes, kr)
+                    update_submission_status(s["id"], "kicked", actor.strip(), notes, kr)
                     st.warning("Kicked — rep notified.")
                     st.rerun()

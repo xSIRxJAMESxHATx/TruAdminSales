@@ -8,6 +8,7 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+# validation imported lazily in create_submission
 import hashlib
 
 # Persistent path – works both locally and on Streamlit Cloud
@@ -241,6 +242,12 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT, emp_id TEXT NOT NULL,
             submission_id INTEGER, message TEXT, created_at TEXT, read_flag INTEGER DEFAULT 0
         )""",
+        """CREATE TABLE IF NOT EXISTS employee_roster (
+            emp_id TEXT PRIMARY KEY,
+            rep_first TEXT, rep_last TEXT, rep_email TEXT,
+            business_unit TEXT, region TEXT, branch TEXT,
+            updated_at TEXT
+        )""",
         """CREATE TABLE IF NOT EXISTS audit_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT, submission_id INTEGER,
             action TEXT, actor TEXT, details TEXT, created_at TEXT
@@ -453,6 +460,10 @@ def get_patterns() -> List[Dict]:
 
 # ─── Submission CRUD ─────────────────────────────────────────────────────────
 def create_submission(data: Dict[str, Any]) -> int:
+    from utils.validation import validate_submission
+    result = validate_submission(data)
+    if not result.ok:
+        raise ValueError("Validation failed: " + "; ".join(result.errors))
     conn = get_conn()
     now = _now()
     cur = conn.execute(
@@ -494,6 +505,19 @@ def create_submission(data: Dict[str, Any]) -> int:
     )
     conn.commit()
     conn.close()
+    # Normalize employee → region / branch mapping
+    try:
+        upsert_employee(
+            data.get("emp_id", ""),
+            data.get("rep_first", ""),
+            data.get("rep_last", ""),
+            data.get("rep_email", ""),
+            data.get("business_unit", ""),
+            data.get("region", ""),
+            data.get("branch", "") or data.get("business_unit", ""),
+        )
+    except Exception:
+        pass
     return sid
 
 def update_submission_status(
@@ -602,6 +626,105 @@ def mark_notifications_read(emp_id: str):
     conn.execute("UPDATE notifications SET read_flag=1 WHERE emp_id=?", (emp_id,))
     conn.commit()
     conn.close()
+
+
+def upsert_employee(emp_id: str, rep_first: str = "", rep_last: str = "",
+                    rep_email: str = "", business_unit: str = "",
+                    region: str = "", branch: str = ""):
+    """Normalize / archive employee → branch / region mapping."""
+    emp_id = (emp_id or "").strip()
+    if not emp_id:
+        return
+    conn = get_conn()
+    conn.execute(
+        """
+        INSERT INTO employee_roster (emp_id, rep_first, rep_last, rep_email,
+            business_unit, region, branch, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(emp_id) DO UPDATE SET
+            rep_first=COALESCE(NULLIF(excluded.rep_first,''), employee_roster.rep_first),
+            rep_last=COALESCE(NULLIF(excluded.rep_last,''), employee_roster.rep_last),
+            rep_email=COALESCE(NULLIF(excluded.rep_email,''), employee_roster.rep_email),
+            business_unit=COALESCE(NULLIF(excluded.business_unit,''), employee_roster.business_unit),
+            region=COALESCE(NULLIF(excluded.region,''), employee_roster.region),
+            branch=COALESCE(NULLIF(excluded.branch,''), employee_roster.branch),
+            updated_at=excluded.updated_at
+        """,
+        (emp_id, (rep_first or "").strip(), (rep_last or "").strip(),
+         (rep_email or "").strip(), (business_unit or "").strip(),
+         (region or "").strip(), (branch or "").strip(), _now())
+    )
+    conn.commit()
+    conn.close()
+
+def get_employee(emp_id: str) -> Optional[Dict]:
+    conn = get_conn()
+    try:
+        row = conn.execute(
+            "SELECT * FROM employee_roster WHERE emp_id=?", ((emp_id or "").strip(),)
+        ).fetchone()
+    except Exception:
+        row = None
+    conn.close()
+    return dict(row) if row else None
+
+def list_employees() -> List[Dict]:
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM employee_roster ORDER BY rep_last, rep_first"
+        ).fetchall()
+    except Exception:
+        rows = []
+    conn.close()
+    return [dict(r) for r in rows]
+
+def get_all_notes_text() -> Dict[str, str]:
+    """Concatenate sales notes and kick notes for word-cloud analysis."""
+    conn = get_conn()
+    sales = conn.execute(
+        "SELECT sales_notes FROM submissions WHERE sales_notes IS NOT NULL AND sales_notes != ''"
+    ).fetchall()
+    kicks = conn.execute(
+        "SELECT kick_reason, admin_notes FROM submissions WHERE status='kicked'"
+    ).fetchall()
+    conn.close()
+    sales_blob = " ".join((r[0] or "") for r in sales)
+    kick_blob = " ".join(
+        f"{(r[0] or '')} {(r[1] or '')}" for r in kicks
+    )
+    return {"sales": sales_blob, "kicks": kick_blob}
+
+def get_submissions_filtered(
+    status: Optional[str] = None,
+    period: str = "all",  # week | month | year | all
+    region: Optional[str] = None,
+    limit: int = 2000,
+) -> List[Dict]:
+    conn = get_conn()
+    q = "SELECT * FROM submissions WHERE 1=1"
+    params: List[Any] = []
+    if status and status != "all":
+        q += " AND status=?"
+        params.append(status)
+    if period == "week":
+        q += " AND created_at >= datetime('now', '-7 days')"
+    elif period == "month":
+        q += " AND created_at >= datetime('now', '-30 days')"
+    elif period == "year":
+        q += " AND created_at >= datetime('now', '-365 days')"
+    if region and region != "All":
+        q += " AND region=?"
+        params.append(region)
+    q += " ORDER BY created_at DESC LIMIT ?"
+    params.append(limit)
+    try:
+        rows = conn.execute(q, params).fetchall()
+    except Exception:
+        rows = []
+    conn.close()
+    return [dict(r) for r in rows]
+
 
 def get_analytics_data() -> Dict[str, Any]:
     conn = get_conn()

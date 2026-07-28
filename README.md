@@ -21,8 +21,17 @@ Ready for GitHub + [Streamlit Community Cloud](https://share.streamlit.io).
 
 Status changes create **in-app notifications** and, when SMTP is configured, **email** to the rep.
 
+### Submission Archive
+Full chronological list of all sales with time / status / region slicers, detail pane, and CSV export.
+
 ### Analytics
-KPIs, status distribution, daily volume, top submitters/processors, exception & kick reasons.
+Weekly / monthly / yearly slicers, region filter, status focus, trend charts, top submitters/processors, **word clouds** and keyword search on sales & kick notes.
+
+### Normalization
+Employee IDs auto-map to name, email, region, and branch on subsequent entries (roster built from each submission).
+
+### Processing control
+Processor **full name is required** before any status change on Admin or Audit queues.
 
 ### Config
 - Dropdown lists (reasons, regions, BUs, grass types, …)
@@ -30,6 +39,16 @@ KPIs, status distribution, daily volume, top submitters/processors, exception & 
 - Discount templates
 - **Email / SMTP** settings
 - Archive viewer
+
+### Data validation & JSON schema
+- Shared rules: phone (10+ digits), email, US state, ZIP/ZIP+4, emp ID, service price/apps, payment/prepay consistency
+- Sensitive-data warning on notes (card/SSN-like patterns)
+- Backend `create_submission` rejects invalid payloads
+- Documented JSON Schema for submission + service lines (`utils/schema.py`)
+
+### Power BI
+- Page **Power BI**: star-schema CSV exports (`fact_submissions`, `fact_service_lines`, `dim_employee`, `dim_status`)
+- Field catalog, refined schemas download, connection guide (CSV / SQLite / Service)
 
 ### Printable form
 One-page professional PDF of the full intake form — fill by pen when digital entry isn’t available.

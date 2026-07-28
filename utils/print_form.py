@@ -1,6 +1,6 @@
 """
-Generate a blank, print-ready PDF of the Exception Sales Intake form
-so a rep can fill it out by hand when needed.
+Polished, compact blank Exception Sales Intake PDF for handwritten use.
+Totals row is compact so all calculations remain visible on one page.
 """
 from io import BytesIO
 from reportlab.lib.pagesizes import letter
@@ -13,214 +13,229 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
 
 
-GREEN = HexColor("#2e7d32")
-LIGHT_GREEN = HexColor("#e8f5e9")
-MED_GREEN = HexColor("#81c784")
-GRAY = HexColor("#616161")
+GREEN = HexColor("#1b5e20")
+LIGHT = HexColor("#f1f8e9")
+MED = HexColor("#81c784")
+GRAY = HexColor("#546e7a")
 LINE = HexColor("#a5d6a7")
+HEADER_BG = HexColor("#2e7d32")
 
 
 def _styles():
     styles = getSampleStyleSheet()
     styles.add(ParagraphStyle(
-        name="FormTitle", fontName="Helvetica-Bold", fontSize=16,
-        textColor=GREEN, alignment=TA_CENTER, spaceAfter=4
+        name="FormTitle", fontName="Helvetica-Bold", fontSize=13,
+        textColor=GREEN, alignment=TA_CENTER, spaceAfter=2, leading=15
     ))
     styles.add(ParagraphStyle(
-        name="FormSub", fontName="Helvetica", fontSize=9,
-        textColor=GRAY, alignment=TA_CENTER, spaceAfter=8
+        name="FormSub", fontName="Helvetica", fontSize=7.5,
+        textColor=GRAY, alignment=TA_CENTER, spaceAfter=4, leading=9
     ))
     styles.add(ParagraphStyle(
-        name="Section", fontName="Helvetica-Bold", fontSize=11,
-        textColor=GREEN, spaceBefore=10, spaceAfter=4
+        name="Section", fontName="Helvetica-Bold", fontSize=9,
+        textColor=white, alignment=TA_LEFT, leading=11
     ))
     styles.add(ParagraphStyle(
-        name="Field", fontName="Helvetica", fontSize=9,
-        textColor=black, leading=12
+        name="Field", fontName="Helvetica", fontSize=8,
+        textColor=black, leading=10
     ))
     styles.add(ParagraphStyle(
-        name="Tiny", fontName="Helvetica", fontSize=7.5,
-        textColor=GRAY, alignment=TA_CENTER
+        name="FieldSm", fontName="Helvetica", fontSize=7.5,
+        textColor=black, leading=9
     ))
     styles.add(ParagraphStyle(
-        name="Warn", fontName="Helvetica-Oblique", fontSize=8,
-        textColor=HexColor("#c62828"), alignment=TA_CENTER, spaceBefore=6
+        name="Tiny", fontName="Helvetica", fontSize=7,
+        textColor=GRAY, alignment=TA_CENTER, leading=8
+    ))
+    styles.add(ParagraphStyle(
+        name="Warn", fontName="Helvetica-Oblique", fontSize=7,
+        textColor=HexColor("#c62828"), alignment=TA_CENTER, spaceBefore=3
+    ))
+    styles.add(ParagraphStyle(
+        name="HdrWhite", fontName="Helvetica-Bold", fontSize=8,
+        textColor=white, leading=10
     ))
     return styles
 
 
-def _line_field(label: str, width_chars: int = 40) -> str:
-    return f"<b>{label}</b> " + "_" * width_chars
+def _lf(label: str, n: int = 30) -> str:
+    return f"<b>{label}</b> " + "_" * n
 
 
 def build_blank_form_pdf() -> bytes:
     buf = BytesIO()
     doc = SimpleDocTemplate(
         buf, pagesize=letter,
-        leftMargin=0.55 * inch, rightMargin=0.55 * inch,
-        topMargin=0.4 * inch, bottomMargin=0.4 * inch
+        leftMargin=0.45 * inch, rightMargin=0.45 * inch,
+        topMargin=0.28 * inch, bottomMargin=0.28 * inch,
     )
     s = _styles()
     story = []
 
     # Header
-    story.append(Paragraph("🌿 LAWN CARE — SYSTEM EXCEPTION SALES INTAKE", s["FormTitle"]))
+    story.append(Paragraph("LAWN CARE — SYSTEM EXCEPTION SALES INTAKE", s["FormTitle"]))
     story.append(Paragraph(
-        "Blank form for handwritten entry when digital entry is unavailable. "
-        "Return completed form to your processor / admin team.",
+        "Blank form for handwritten entry · Return to processing team · Do not write card numbers or sensitive payment data",
         s["FormSub"]
     ))
-    story.append(HRFlowable(width="100%", thickness=2, color=GREEN, spaceAfter=6))
+    story.append(HRFlowable(width="100%", thickness=1.5, color=GREEN, spaceAfter=4))
+
+    def section_bar(title: str):
+        bar = Table(
+            [[Paragraph(title, s["Section"])]],
+            colWidths=[7.6 * inch]
+        )
+        bar.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), HEADER_BG),
+            ("LEFTPADDING", (0, 0), (-1, -1), 6),
+            ("TOPPADDING", (0, 0), (-1, -1), 3),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ("ROUNDEDCORNERS", [3, 3, 3, 3]),
+        ]))
+        return bar
 
     # ① Customer
-    story.append(Paragraph("① CUSTOMER INFORMATION", s["Section"]))
-    cust_data = [
-        [Paragraph(_line_field("First Name", 28), s["Field"]),
-         Paragraph(_line_field("Last Name", 28), s["Field"])],
-        [Paragraph(_line_field("Phone", 28), s["Field"]),
-         Paragraph(_line_field("Mobile / Alt", 28), s["Field"])],
-        [Paragraph(_line_field("Email", 55), s["Field"]), ""],
-        [Paragraph(_line_field("Street Address", 55), s["Field"]), ""],
-        [Paragraph(_line_field("City", 22), s["Field"]),
-         Paragraph(_line_field("State __", 8) + "  " + _line_field("ZIP", 12), s["Field"])],
-        [Paragraph(_line_field("Property Sq Ft", 18), s["Field"]),
-         Paragraph(_line_field("Grass Type", 28), s["Field"])],
+    story.append(section_bar("①  CUSTOMER INFORMATION"))
+    story.append(Spacer(1, 3))
+    cust = [
+        [Paragraph(_lf("First Name", 26), s["Field"]),
+         Paragraph(_lf("Last Name", 26), s["Field"]),
+         Paragraph(_lf("Phone", 18), s["Field"])],
+        [Paragraph(_lf("Mobile / Alt", 22), s["Field"]),
+         Paragraph(_lf("Email", 40), s["Field"]), ""],
+        [Paragraph(_lf("Street", 50), s["Field"]), "", ""],
+        [Paragraph(_lf("City", 22), s["Field"]),
+         Paragraph(_lf("State", 6), s["Field"]),
+         Paragraph(_lf("ZIP", 12), s["Field"])],
+        [Paragraph(_lf("Sq Ft", 12), s["Field"]),
+         Paragraph(_lf("Grass Type", 20), s["Field"]),
+         Paragraph("Areas: ☐F ☐B ☐R ☐L", s["FieldSm"])],
+        [Paragraph("Special: ☐ Locked gate  ☐ Pet  ☐ Invisible fence  ☐ Sprinkler", s["FieldSm"]), "", ""],
     ]
-    t = Table(cust_data, colWidths=[3.6 * inch, 3.6 * inch])
-    t.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), LIGHT_GREEN),
-        ("BOX", (0, 0), (-1, -1), 0.5, MED_GREEN),
-        ("INNERGRID", (0, 0), (-1, -1), 0.25, LINE),
+    ct = Table(cust, colWidths=[2.7*inch, 2.7*inch, 2.2*inch])
+    ct.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), LIGHT),
+        ("BOX", (0, 0), (-1, -1), 0.4, MED),
+        ("INNERGRID", (0, 0), (-1, -1), 0.2, LINE),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 6),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-        ("TOPPADDING", (0, 0), (-1, -1), 5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-        ("SPAN", (0, 2), (1, 2)),
-        ("SPAN", (0, 3), (1, 3)),
+        ("LEFTPADDING", (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ("SPAN", (1, 1), (2, 1)),
+        ("SPAN", (0, 2), (2, 2)),
+        ("SPAN", (0, 5), (2, 5)),
     ]))
-    story.append(t)
-
-    story.append(Paragraph(
-        "Areas serviced:  ☐ Front   ☐ Back   ☐ Right   ☐ Left"
-        " &nbsp;&nbsp;&nbsp; Special:  ☐ Locked Gate  ☐ Pet  ☐ Invisible Fence  ☐ Sprinkler",
-        s["Field"]
-    ))
-    story.append(Spacer(1, 4))
+    story.append(ct)
+    story.append(Spacer(1, 5))
 
     # ② Services
-    story.append(Paragraph("② SERVICES", s["Section"]))
-    story.append(Paragraph(
-        "Main Lawn / Expanded / Tree &amp; Shrub — one row per service. "
-        "For Tree &amp; Shrub, mark rounds 1–8 (Y/N pattern).",
-        s["Tiny"]
-    ))
-
-    hdr = [
-        Paragraph("<b>Service Name</b>", s["Field"]),
-        Paragraph("<b># Apps</b>", s["Field"]),
-        Paragraph("<b>$ / App</b>", s["Field"]),
-        Paragraph("<b>Discounts</b>", s["Field"]),
-        Paragraph("<b>Pattern (T&amp;S)</b>", s["Field"]),
-        Paragraph("<b>Line Total</b>", s["Field"]),
+    story.append(section_bar("②  SERVICES  (one row per service · Tree & Shrub: mark rounds 1–8)"))
+    story.append(Spacer(1, 3))
+    hdr = [Paragraph(h, s["HdrWhite"]) for h in
+           ["Service Name", "#Apps", "$/App", "Discounts / codes", "T&S Pattern", "Line $"]]
+    blank = [
+        Paragraph("_" * 20, s["FieldSm"]),
+        Paragraph("___", s["FieldSm"]),
+        Paragraph("_____", s["FieldSm"]),
+        Paragraph("_" * 16, s["FieldSm"]),
+        Paragraph("☐1 ☐2 ☐3 ☐4 ☐5 ☐6 ☐7 ☐8", s["FieldSm"]),
+        Paragraph("______", s["FieldSm"]),
     ]
-    blank_row = [
-        Paragraph("_" * 22, s["Field"]),
-        Paragraph("____", s["Field"]),
-        Paragraph("______", s["Field"]),
-        Paragraph("_" * 14, s["Field"]),
-        Paragraph("1 2 3 4 5 6 7 8", s["Field"]),
-        Paragraph("________", s["Field"]),
-    ]
-    svc_data = [hdr] + [blank_row[:] for _ in range(5)]
-    st = Table(svc_data, colWidths=[2.0*inch, 0.7*inch, 0.8*inch, 1.4*inch, 1.4*inch, 0.9*inch])
+    rows = [hdr] + [list(blank) for _ in range(4)]
+    st = Table(rows, colWidths=[2.0*inch, 0.55*inch, 0.7*inch, 1.55*inch, 1.85*inch, 0.75*inch])
     st.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), GREEN),
-        ("TEXTCOLOR", (0, 0), (-1, 0), white),
+        ("BACKGROUND", (0, 0), (-1, 0), HEADER_BG),
         ("BACKGROUND", (0, 1), (-1, -1), white),
-        ("BOX", (0, 0), (-1, -1), 0.5, MED_GREEN),
-        ("INNERGRID", (0, 0), (-1, -1), 0.25, LINE),
+        ("BOX", (0, 0), (-1, -1), 0.4, MED),
+        ("INNERGRID", (0, 0), (-1, -1), 0.2, LINE),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("ALIGN", (1, 0), (-1, -1), "CENTER"),
-        ("TOPPADDING", (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ("LEFTPADDING", (0, 0), (-1, -1), 3),
+        ("ALIGN", (1, 0), (-1, 0), "CENTER"),
+        ("TOPPADDING", (0, 0), (-1, -1), 2.5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2.5),
+        ("LEFTPADDING", (0, 0), (-1, -1), 2),
     ]))
     story.append(st)
     story.append(Paragraph(
-        "Discount codes (circle): 20% all · 50% 1st · 50% last · Last free · Military · Senior · Price match · Other $_____",
+        "Discount codes: 20% all · 50% 1st · 50% last · Last free · Military · Senior · Price match · Other $____",
         s["Tiny"]
     ))
-    story.append(Spacer(1, 4))
+    story.append(Spacer(1, 3))
 
-    # Totals box
-    tot = [
-        [Paragraph("<b>Subtotal $________</b>", s["Field"]),
-         Paragraph("<b>Total Discount $________</b>", s["Field"]),
-         Paragraph("<b>Sales Tax $________</b>", s["Field"]),
-         Paragraph("<b>GRAND TOTAL $________</b>", s["Field"])],
+    # Compact totals — single thin row
+    tot_cells = [
+        Paragraph("<b>Subtotal</b> $_______", s["FieldSm"]),
+        Paragraph("<b>Discounts</b> $_______", s["FieldSm"]),
+        Paragraph("<b>Tax</b> $_______", s["FieldSm"]),
+        Paragraph("<b>Prepay %</b> ___", s["FieldSm"]),
+        Paragraph("<b>GRAND TOTAL</b> $________", s["FieldSm"]),
     ]
-    tt = Table(tot, colWidths=[1.8*inch, 1.9*inch, 1.7*inch, 1.8*inch])
+    tt = Table([tot_cells], colWidths=[1.5*inch, 1.5*inch, 1.3*inch, 1.1*inch, 2.0*inch])
     tt.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), LIGHT_GREEN),
-        ("BOX", (0, 0), (-1, -1), 1, GREEN),
-        ("INNERGRID", (0, 0), (-1, -1), 0.4, MED_GREEN),
-        ("TOPPADDING", (0, 0), (-1, -1), 6),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ("BACKGROUND", (0, 0), (-1, -1), LIGHT),
+        ("BOX", (0, 0), (-1, -1), 0.8, GREEN),
+        ("INNERGRID", (0, 0), (-1, -1), 0.3, MED),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("LEFTPADDING", (0, 0), (-1, -1), 4),
         ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("BACKGROUND", (4, 0), (4, 0), HexColor("#c8e6c9")),
     ]))
     story.append(tt)
+    story.append(Spacer(1, 5))
 
-    # ③ Rep / Payment
-    story.append(Paragraph("③ SALES REP · PAYMENT · REASON", s["Section"]))
-    rep_data = [
-        [Paragraph(_line_field("Employee ID", 16), s["Field"]),
-         Paragraph(_line_field("Rep First", 16), s["Field"]),
-         Paragraph(_line_field("Rep Last", 16), s["Field"])],
-        [Paragraph(_line_field("Rep Email", 28), s["Field"]),
-         Paragraph(_line_field("Business Unit", 18), s["Field"]),
-         Paragraph(_line_field("Region", 16), s["Field"])],
-        [Paragraph(_line_field("Sales Channel", 22), s["Field"]),
-         Paragraph("Payment:  ☐ Prepay  ☐ Easypay  ☐ Invoice", s["Field"]),
-         Paragraph("Prepay %:  ☐ 5  ☐ 7  ☐ 10", s["Field"])],
-        [Paragraph(_line_field("Exception Reason", 55), s["Field"]), ""],
+    # ③ Rep / payment
+    story.append(section_bar("③  SALES REP · PAYMENT · EXCEPTION REASON"))
+    story.append(Spacer(1, 3))
+    rep = [
+        [Paragraph(_lf("Emp ID", 12), s["Field"]),
+         Paragraph(_lf("First", 14), s["Field"]),
+         Paragraph(_lf("Last", 14), s["Field"]),
+         Paragraph(_lf("Email", 22), s["Field"])],
+        [Paragraph(_lf("Branch / BU", 18), s["Field"]),
+         Paragraph(_lf("Region", 14), s["Field"]),
+         Paragraph(_lf("Channel", 16), s["Field"]),
+         Paragraph("Pay: ☐Prepay ☐Easy ☐Inv", s["FieldSm"])],
+        [Paragraph("Prepay %: ☐5 ☐7 ☐10", s["FieldSm"]),
+         Paragraph(_lf("Exception reason", 48), s["Field"]), "", ""],
     ]
-    rt = Table(rep_data, colWidths=[2.5*inch, 2.5*inch, 2.2*inch])
+    rt = Table(rep, colWidths=[1.9*inch, 1.9*inch, 1.9*inch, 1.9*inch])
     rt.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), LIGHT_GREEN),
-        ("BOX", (0, 0), (-1, -1), 0.5, MED_GREEN),
-        ("INNERGRID", (0, 0), (-1, -1), 0.25, LINE),
+        ("BACKGROUND", (0, 0), (-1, -1), LIGHT),
+        ("BOX", (0, 0), (-1, -1), 0.4, MED),
+        ("INNERGRID", (0, 0), (-1, -1), 0.2, LINE),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING", (0, 0), (-1, -1), 5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-        ("LEFTPADDING", (0, 0), (-1, -1), 5),
-        ("SPAN", (0, 3), (2, 3)),
+        ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ("LEFTPADDING", (0, 0), (-1, -1), 3),
+        ("SPAN", (1, 2), (3, 2)),
     ]))
     story.append(rt)
+    story.append(Spacer(1, 3))
 
-    story.append(Paragraph("<b>Notes / Special Instructions</b> (do NOT write card numbers or sensitive payment data)", s["Field"]))
-    notes_box = Table([[Paragraph("<br/><br/><br/><br/>", s["Field"])]], colWidths=[7.2*inch])
-    notes_box.setStyle(TableStyle([
-        ("BOX", (0, 0), (-1, -1), 0.5, MED_GREEN),
+    story.append(Paragraph("<b>Notes / special instructions</b>", s["FieldSm"]))
+    notes = Table([[Paragraph("<br/><br/>", s["Field"])]], colWidths=[7.6*inch])
+    notes.setStyle(TableStyle([
+        ("BOX", (0, 0), (-1, -1), 0.4, MED),
         ("BACKGROUND", (0, 0), (-1, -1), white),
+        ("TOPPADDING", (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
     ]))
-    story.append(notes_box)
+    story.append(notes)
 
     story.append(Paragraph(
-        "⚠️ Do not record credit-card numbers, bank accounts, SSNs, or other highly sensitive data on this form.",
+        "Do not record credit-card numbers, bank accounts, SSNs, or other highly sensitive data on this form.",
         s["Warn"]
     ))
-    story.append(Spacer(1, 6))
-    story.append(HRFlowable(width="100%", thickness=1, color=MED_GREEN, spaceAfter=4))
+    story.append(Spacer(1, 4))
+    story.append(HRFlowable(width="100%", thickness=0.8, color=MED, spaceAfter=3))
     story.append(Paragraph(
-        "Rep signature: ___________________________  Date: ____________  "
-        "Admin received: ___________________________  Date: ____________",
-        s["Field"]
+        "Rep signature: ________________________  Date: __________   "
+        "Received by: ________________________  Date: __________",
+        s["FieldSm"]
     ))
-    story.append(Paragraph(
-        "Lawn Care Exception Sales System · Printable blank intake form",
-        s["Tiny"]
-    ))
+    story.append(Paragraph("Lawn Care Exception Sales · Printable intake form", s["Tiny"]))
 
     doc.build(story)
     return buf.getvalue()

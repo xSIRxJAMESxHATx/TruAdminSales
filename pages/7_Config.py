@@ -6,7 +6,7 @@ from utils.theme import apply_theme
 from utils.db import (
     init_db, get_config, set_config, get_tax_rate, set_tax_rate,
     get_discounts, add_discount, get_archived_services,
-    get_archived_channels, get_patterns,
+    get_archived_channels, get_patterns, list_employees,
 )
 from utils.email_notify import get_email_settings, save_email_settings
 
@@ -135,3 +135,11 @@ with tab5:
     pats = get_patterns()
     st.markdown("**Patterns**")
     st.write(", ".join(f"`{p['pattern']}`" for p in pats) if pats else "— none yet —")
+    st.markdown("---")
+    st.markdown("**Employee roster (normalized emp ID → name / region / branch)**")
+    emps = list_employees()
+    if emps:
+        import pandas as pd
+        st.dataframe(pd.DataFrame(emps), use_container_width=True, hide_index=True)
+    else:
+        st.write("— none yet — (populated automatically when sales are submitted)")

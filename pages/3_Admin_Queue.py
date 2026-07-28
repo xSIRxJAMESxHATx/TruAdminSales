@@ -15,15 +15,25 @@ st.title("🛠️ Admin Processing Queue")
 st.caption("Review exception sales, enter into system, move to audit, or kick with reason. Open to sales & admin teams.")
 
 # Actor for audit trail (optional)
-actor = st.sidebar.text_input("Your name / ID (for audit log)", value="processor", key="admin_actor")
+st.sidebar.markdown("### 🔐 Processor identity")
+actor = st.sidebar.text_input(
+    "Your full name (required to process)",
+    value="",
+    key="admin_actor",
+    placeholder="e.g. Jane Smith",
+)
+if not (actor or "").strip():
+    st.sidebar.warning("Enter your name to enable processing actions.")
 st.sidebar.markdown("---")
 st.sidebar.markdown("**Quick tips**")
 st.sidebar.markdown(
+    "- Name is required before any status change\n"
     "- Set **Processing** while you work a sale\n"
     "- **Completed** after system entry\n"
     "- **Audit** when customer contact is needed\n"
     "- **Kick** requires a reason"
 )
+can_process = bool((actor or "").strip())
 
 # KPI strip
 try:
@@ -123,6 +133,8 @@ for s in subs:
                 )
 
         st.markdown("---")
+        if not can_process:
+            st.warning("Enter your name in the sidebar before processing this sale.")
         admin_notes = st.text_area(
             "Processor notes",
             key=f"an_{s['id']}",
@@ -133,23 +145,34 @@ for s in subs:
         b1, b2, b3, b4 = st.columns(4)
         with b1:
             if st.button("✅ Complete", key=f"comp_{s['id']}", type="primary", use_container_width=True):
-                update_submission_status(s["id"], "completed", actor, admin_notes)
-                st.success("Completed — rep notified (in-app + email if configured).")
-                st.rerun()
+                if not can_process:
+                    st.error("Enter your name in the sidebar first.")
+                else:
+                    update_submission_status(s["id"], "completed", actor.strip(), admin_notes)
+                    st.success("Completed — rep notified (in-app + email if configured).")
+                    st.rerun()
         with b2:
             if st.button("🔄 Processing", key=f"proc_{s['id']}", use_container_width=True):
-                update_submission_status(s["id"], "processing", actor, admin_notes)
-                st.rerun()
+                if not can_process:
+                    st.error("Enter your name in the sidebar first.")
+                else:
+                    update_submission_status(s["id"], "processing", actor.strip(), admin_notes)
+                    st.rerun()
         with b3:
             if st.button("🔍 To Audit", key=f"aud_{s['id']}", use_container_width=True):
-                update_submission_status(s["id"], "audit", actor, admin_notes)
-                st.rerun()
+                if not can_process:
+                    st.error("Enter your name in the sidebar first.")
+                else:
+                    update_submission_status(s["id"], "audit", actor.strip(), admin_notes)
+                    st.rerun()
         with b4:
             kick_r = st.selectbox("Kick reason", [""] + kick_reasons, key=f"kr_{s['id']}")
             if st.button("❌ Kick", key=f"kick_{s['id']}", use_container_width=True):
-                if not kick_r:
+                if not can_process:
+                    st.error("Enter your name in the sidebar first.")
+                elif not kick_r:
                     st.error("Select a kick reason")
                 else:
-                    update_submission_status(s["id"], "kicked", actor, admin_notes, kick_r)
+                    update_submission_status(s["id"], "kicked", actor.strip(), admin_notes, kick_r)
                     st.warning("Kicked — rep notified.")
                     st.rerun()
