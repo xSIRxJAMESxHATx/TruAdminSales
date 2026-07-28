@@ -5,7 +5,9 @@ Open access (no password). Actor name optional for audit trail.
 import streamlit as st
 import json
 from utils.theme import apply_theme
-from utils.db import init_db, get_submissions, update_submission_status, get_config, get_analytics_data
+from utils.db import init_db, get_submissions, update_submission_status, get_config, get_analytics_data, list_processors, normalize_processor_name
+from utils.validation import validate_processor_name
+from utils.submission_view import render_submission_detail, build_submission_snapshot_pdf
 
 st.set_page_config(page_title="Admin Queue", page_icon="🛠️", layout="wide")
 apply_theme()
@@ -16,24 +18,29 @@ st.caption("Review exception sales, enter into system, move to audit, or kick wi
 
 # Actor for audit trail (optional)
 st.sidebar.markdown("### 🔐 Processor identity")
-actor = st.sidebar.text_input(
-    "Your full name (required to process)",
-    value="",
-    key="admin_actor",
-    placeholder="e.g. Jane Smith",
+_procs = list_processors()
+_sel = st.sidebar.selectbox(
+    "Your name (required)",
+    options=[""] + _procs + ["— type new —"],
+    key="admin_actor_sel",
 )
-if not (actor or "").strip():
+if _sel == "— type new —":
+    actor = st.sidebar.text_input("Type your full name", key="admin_actor", placeholder="e.g. Jane Smith")
+else:
+    actor = _sel
+_vr = validate_processor_name(actor)
+can_process = _vr.ok
+if not can_process:
     st.sidebar.warning("Enter your name to enable processing actions.")
 st.sidebar.markdown("---")
 st.sidebar.markdown("**Quick tips**")
 st.sidebar.markdown(
-    "- Name is required before any status change\n"
+    "- Name is required and **normalized** on save\n"
     "- Set **Processing** while you work a sale\n"
     "- **Completed** after system entry\n"
     "- **Audit** when customer contact is needed\n"
     "- **Kick** requires a reason"
 )
-can_process = bool((actor or "").strip())
 
 # KPI strip
 try:
@@ -132,6 +139,14 @@ for s in subs:
                     f"${float(svc.get('line_total') or 0):.2f}{pat}"
                 )
 
+        pdf_bytes = build_submission_snapshot_pdf(s)
+        st.download_button(
+            "📄 Full submission snapshot (PDF)",
+            data=pdf_bytes,
+            file_name=f"submission_{s['id']}_snapshot.pdf",
+            mime="application/pdf",
+            key=f"snap_admin_{s['id']}",
+        )
         st.markdown("---")
         if not can_process:
             st.warning("Enter your name in the sidebar before processing this sale.")

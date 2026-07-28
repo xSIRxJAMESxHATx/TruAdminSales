@@ -93,41 +93,41 @@ def render_service_block(prefix: str, service_type: str, rows_key: str, show_pat
 
     for idx, row in enumerate(st.session_state[rows_key]):
         with st.container(border=True):
-            cols = st.columns([3, 1, 1, 2, 1.5, 1.2, 1.2, 0.5])
-            with cols[0]:
-                # Name: free text + archive
+            # Row 1: name · apps · price · discounts · delete
+            c1, c2, c3, c4, c5 = st.columns([3.2, 0.9, 1.1, 2.6, 0.4])
+            with c1:
                 name_choice = st.selectbox(
-                    "Service Name",
+                    "Service",
                     options=["— type new —"] + archived,
                     key=f"{rows_key}_sel_{idx}",
-                    index=0 if not row.get("name") else (archived.index(row["name"]) + 1 if row["name"] in archived else 0)
+                    index=0 if not row.get("name") else (archived.index(row["name"]) + 1 if row["name"] in archived else 0),
                 )
                 if name_choice == "— type new —":
-                    name = st.text_input("New service name", value=row.get("name", ""), key=f"{rows_key}_name_{idx}")
+                    name = st.text_input("New name", value=row.get("name", ""), key=f"{rows_key}_name_{idx}", label_visibility="collapsed", placeholder="Type service name")
                 else:
                     name = name_choice
-                    st.text_input("Selected", value=name, disabled=True, key=f"{rows_key}_name_disp_{idx}")
                 row["name"] = name
-
-            with cols[1]:
-                row["num_apps"] = st.number_input("# Apps", min_value=1, max_value=24, value=row.get("num_apps", 1), key=f"{rows_key}_apps_{idx}")
-            with cols[2]:
-                row["price"] = st.number_input("Price / App $", min_value=0.0, value=float(row.get("price", 0)), step=5.0, key=f"{rows_key}_price_{idx}")
-
-            with cols[3]:
+            with c2:
+                row["num_apps"] = st.number_input("Apps", min_value=1, max_value=24, value=row.get("num_apps", 1), key=f"{rows_key}_apps_{idx}")
+            with c3:
+                row["price"] = st.number_input("$ / app", min_value=0.0, value=float(row.get("price", 0)), step=1.0, format="%.2f", key=f"{rows_key}_price_{idx}")
+            with c4:
                 selected_discs = st.multiselect(
                     "Discounts",
                     options=discount_labels,
                     default=row.get("disc_labels", []),
-                    key=f"{rows_key}_disc_{idx}"
+                    key=f"{rows_key}_disc_{idx}",
                 )
                 row["disc_labels"] = selected_discs
-                # Resolve full discount objects
                 row["discounts"] = [d for d in discount_opts if d["label"] in selected_discs]
-                # Custom $ discount
-                custom_dollar = st.number_input("Extra $ off", min_value=0.0, value=0.0, step=1.0, key=f"{rows_key}_cd_{idx}")
+                custom_dollar = st.number_input("Extra $ off", min_value=0.0, value=0.0, step=1.0, format="%.2f", key=f"{rows_key}_cd_{idx}")
                 if custom_dollar > 0:
                     row["discounts"].append({"label": "Custom $", "type": "dollar", "value": custom_dollar})
+            with c5:
+                st.write("")  # align
+                if st.button("🗑", key=f"{rows_key}_del_{idx}", help="Remove line"):
+                    st.session_state[rows_key].pop(idx)
+                    st.rerun()
 
             # Calculate line
             is_laf = any("last app free" in (d.get("label") or "").lower() for d in row.get("discounts", []))
@@ -145,20 +145,17 @@ def render_service_block(prefix: str, service_type: str, rows_key: str, show_pat
             row["line_total"] = line["total"]
             row["service_type"] = service_type
 
-            with cols[4]:
-                st.metric("After Disc", f"${line['after_discount']:.2f}")
-            with cols[5]:
-                st.metric("Tax", f"${line['tax']:.2f}")
-            with cols[6]:
-                st.metric("Line Total", f"${line['total']:.2f}")
-            with cols[7]:
-                if st.button("🗑", key=f"{rows_key}_del_{idx}"):
-                    st.session_state[rows_key].pop(idx)
-                    st.rerun()
+            # Compact pricing readout (single caption line — no large metric cards)
+            st.caption(
+                f"**Base** ${line['base']:.2f}  ·  "
+                f"**Discount** −${line['discount']:.2f}  ·  "
+                f"**After disc** ${line['after_discount']:.2f}  ·  "
+                f"**Tax** ${line['tax']:.2f}  ·  "
+                f"**Line total** **${line['total']:.2f}**"
+            )
 
-            # Tree/Shrub pattern
             if show_pattern:
-                st.markdown("**Service Pattern (select rounds 1–8 that will be performed)**")
+                st.markdown("**Service pattern (rounds 1–8)**")
                 pcols = st.columns(8)
                 selected_rounds = []
                 for r in range(1, 9):
@@ -168,7 +165,7 @@ def render_service_block(prefix: str, service_type: str, rows_key: str, show_pat
                 pattern = pattern_from_selection(selected_rounds)
                 row["pattern"] = pattern
                 row["rounds"] = selected_rounds
-                st.caption(f"Pattern code: `{pattern}` (will be archived)")
+                st.caption(f"Pattern: `{pattern}`")
 
     if st.button(f"➕ Add {prefix} line", key=f"add_{rows_key}"):
         st.session_state[rows_key].append({"name": "", "num_apps": 1, "price": 0.0, "discounts": []})

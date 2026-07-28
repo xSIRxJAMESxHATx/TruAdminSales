@@ -4,7 +4,8 @@ Audit Queue – customer-contact verification. Open access.
 import streamlit as st
 import json
 from utils.theme import apply_theme
-from utils.db import init_db, get_submissions, update_submission_status, get_config
+from utils.db import init_db, get_submissions, update_submission_status, get_config, list_processors, normalize_processor_name
+from utils.validation import validate_processor_name
 
 st.set_page_config(page_title="Audit Queue", page_icon="🔍", layout="wide")
 apply_theme()
@@ -13,8 +14,13 @@ init_db()
 st.title("🔍 Audit Queue")
 st.caption("Sales requiring customer contact or extra verification before final status.")
 
-actor = st.sidebar.text_input("Your full name (required)", value="", key="aud_actor", placeholder="e.g. Jane Smith")
-can_process = bool((actor or "").strip())
+_procs = list_processors()
+_sel = st.sidebar.selectbox("Your name (required)", options=[""] + _procs + ["— type new —"], key="aud_actor_sel")
+if _sel == "— type new —":
+    actor = st.sidebar.text_input("Type your full name", key="aud_actor", placeholder="e.g. Jane Smith")
+else:
+    actor = _sel
+can_process = validate_processor_name(actor).ok
 if not can_process:
     st.sidebar.warning("Enter your name before completing audit actions.")
     st.warning("Enter your name in the sidebar to enable audit actions.")

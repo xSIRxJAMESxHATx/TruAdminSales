@@ -5,6 +5,7 @@ import streamlit as st
 import json
 from utils.theme import apply_theme
 from utils.db import init_db, get_submissions, get_notifications, mark_notifications_read, get_submission
+from utils.submission_view import build_submission_snapshot_pdf
 
 st.set_page_config(page_title="My Submissions", page_icon="📬", layout="wide")
 apply_theme()
@@ -64,3 +65,10 @@ else:
                     st.write(f"- {svc.get('name')} × {svc.get('num_apps')} @ ${svc.get('price', 0):.2f} → ${svc.get('line_total', 0):.2f}{pat}")
             if s.get("sales_notes"):
                 st.markdown(f"**Your notes:** {s['sales_notes']}")
+            st.download_button(
+                "📄 Full submission snapshot (PDF)",
+                data=build_submission_snapshot_pdf(s),
+                file_name=f"submission_{s['id']}_snapshot.pdf",
+                mime="application/pdf",
+                key=f"snap_my_{s['id']}",
+            )

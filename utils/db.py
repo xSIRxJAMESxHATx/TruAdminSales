@@ -242,6 +242,11 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT, emp_id TEXT NOT NULL,
             submission_id INTEGER, message TEXT, created_at TEXT, read_flag INTEGER DEFAULT 0
         )""",
+        """CREATE TABLE IF NOT EXISTS processor_roster (
+            name TEXT PRIMARY KEY,
+            display_name TEXT,
+            updated_at TEXT
+        )""",
         """CREATE TABLE IF NOT EXISTS employee_roster (
             emp_id TEXT PRIMARY KEY,
             rep_first TEXT, rep_last TEXT, rep_email TEXT,
@@ -527,6 +532,10 @@ def update_submission_status(
     admin_notes: str = "",
     kick_reason: str = ""
 ) -> bool:
+    try:
+        actor = normalize_processor_name(actor) or (actor or "").strip()
+    except Exception:
+        actor = (actor or "").strip()
     conn = get_conn()
     now = _now()
     row = conn.execute(
@@ -724,6 +733,121 @@ def get_submissions_filtered(
         rows = []
     conn.close()
     return [dict(r) for r in rows]
+
+
+
+def upsert_processor(name: str):
+    """Normalize processor display names."""
+    name = (name or "").strip()
+    if not name or len(name) < 2:
+        return
+    # Title-case normalization while preserving intentional casing of short tokens
+    display = " ".join(part.capitalize() if part.islower() or part.isupper() else part for part in name.split())
+    conn = get_conn()
+    try:
+        conn.execute(
+            """
+            INSERT INTO processor_roster (name, display_name, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(name) DO UPDATE SET
+                display_name=excluded.display_name,
+                updated_at=excluded.updated_at
+            """,
+            (name.lower(), display, _now())
+        )
+        conn.commit()
+    except Exception:
+        pass
+    conn.close()
+    return display
+
+def list_processors() -> List[str]:
+    conn = get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT display_name FROM processor_roster ORDER BY display_name"
+        ).fetchall()
+    except Exception:
+        rows = []
+    conn.close()
+    return [r[0] for r in rows if r[0]]
+
+def normalize_processor_name(name: str) -> str:
+    name = (name or "").strip()
+    if not name:
+        return ""
+    display = upsert_processor(name)
+    return display or name
+
+def update_full_submission(sid: int, data: Dict[str, Any], actor: str) -> bool:
+    """Edit an existing submission (correct manual entry errors)."""
+    conn = get_conn()
+    now = _now()
+    row = conn.execute("SELECT id, status FROM submissions WHERE id=?", (sid,)).fetchone()
+    if not row:
+        conn.close()
+        return False
+    conn.execute(
+        """
+        UPDATE submissions SET
+            updated_at=?,
+            cust_first=?, cust_last=?, cust_phone=?, cust_mobile=?, cust_email=?,
+            cust_street=?, cust_city=?, cust_state=?, cust_zip=?,
+            property_sqft=?, areas_serviced=?, grass_type=?, special_params=?,
+            services_json=?,
+            emp_id=?, rep_first=?, rep_last=?, rep_email=?,
+            business_unit=?, region=?, sales_channel=?,
+            payment_type=?, prepay_pct=?,
+            subtotal=?, total_discount=?, total_tax=?, grand_total=?,
+            exception_reason=?, sales_notes=?,
+            status=COALESCE(?, status)
+        WHERE id=?
+        """,
+        (
+            now,
+            data.get("cust_first"), data.get("cust_last"), data.get("cust_phone"),
+            data.get("cust_mobile"), data.get("cust_email"),
+            data.get("cust_street"), data.get("cust_city"), data.get("cust_state"),
+            data.get("cust_zip"),
+            data.get("property_sqft"), json.dumps(data.get("areas_serviced", [])),
+            data.get("grass_type"), json.dumps(data.get("special_params", [])),
+            json.dumps(data.get("services", [])),
+            data.get("emp_id"), data.get("rep_first"), data.get("rep_last"),
+            data.get("rep_email"),
+            data.get("business_unit"), data.get("region"), data.get("sales_channel"),
+            data.get("payment_type"), data.get("prepay_pct", 0),
+            data.get("subtotal", 0), data.get("total_discount", 0),
+            data.get("total_tax", 0), data.get("grand_total", 0),
+            data.get("exception_reason"), data.get("sales_notes"),
+            data.get("status"),
+            sid,
+        )
+    )
+    conn.execute(
+        "INSERT INTO audit_log (submission_id, action, actor, details, created_at) VALUES (?,?,?,?,?)",
+        (sid, "edited", actor, "Full record corrected", now)
+    )
+    conn.commit()
+    conn.close()
+    return True
+
+def delete_submission(sid: int, actor: str) -> bool:
+    """Permanently delete a submission (with audit trail entry first)."""
+    conn = get_conn()
+    now = _now()
+    row = conn.execute("SELECT id FROM submissions WHERE id=?", (sid,)).fetchone()
+    if not row:
+        conn.close()
+        return False
+    conn.execute(
+        "INSERT INTO audit_log (submission_id, action, actor, details, created_at) VALUES (?,?,?,?,?)",
+        (sid, "deleted", actor, f"Submission #{sid} permanently deleted", now)
+    )
+    conn.execute("DELETE FROM notifications WHERE submission_id=?", (sid,))
+    conn.execute("DELETE FROM submissions WHERE id=?", (sid,))
+    conn.commit()
+    conn.close()
+    return True
 
 
 def get_analytics_data() -> Dict[str, Any]:
