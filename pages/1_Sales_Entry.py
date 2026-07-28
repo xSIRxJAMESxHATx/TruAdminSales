@@ -10,6 +10,7 @@ from utils.db import (
     archive_pattern, create_submission, get_config, get_tax_rate
 )
 from utils.pricing import calc_service_line, calc_order_totals, pattern_from_selection
+from utils.print_form import build_blank_form_pdf
 
 st.set_page_config(page_title="Sales Entry", page_icon="📝", layout="wide")
 apply_theme()
@@ -17,6 +18,17 @@ init_db()
 
 st.title("📝 Exception Sales Entry Form")
 st.caption("Complete all required fields. Pricing, tax, and totals calculate automatically.")
+
+with st.sidebar:
+    st.markdown("### 📄 Paper form")
+    st.caption("Need to capture offline? Download a blank printable form.")
+    st.download_button(
+        "⬇️ Blank form PDF",
+        data=build_blank_form_pdf(),
+        file_name="Exception_Sales_Intake_Blank.pdf",
+        mime="application/pdf",
+        use_container_width=True,
+    )
 
 # ─── Session state for dynamic service rows ───────────────────────────────────
 if "lawn_services" not in st.session_state:
@@ -186,6 +198,7 @@ with st.container(border=True):
         emp_id = st.text_input("Employee ID *", key="emp_id")
         rep_first = st.text_input("Rep First Name *", key="rep_first")
         rep_last = st.text_input("Rep Last Name *", key="rep_last")
+        rep_email = st.text_input("Rep Email (for status notifications)", key="rep_email", placeholder="you@company.com")
     with r2:
         bus_units = get_config("business_units")
         business_unit = st.selectbox("Business Unit *", options=[""] + bus_units, key="bu")
@@ -279,6 +292,7 @@ if st.button("🚀 Submit Exception Sale", type="primary", use_container_width=T
             "emp_id": emp_id.strip(),
             "rep_first": rep_first.strip(),
             "rep_last": rep_last.strip(),
+            "rep_email": (rep_email or "").strip(),
             "business_unit": business_unit,
             "region": region,
             "sales_channel": sales_channel.strip() if sales_channel else "",

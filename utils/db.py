@@ -205,7 +205,8 @@ def init_db():
             cust_street TEXT, cust_city TEXT, cust_state TEXT, cust_zip TEXT,
             property_sqft REAL, areas_serviced TEXT, grass_type TEXT, special_params TEXT,
             services_json TEXT NOT NULL DEFAULT '[]',
-            emp_id TEXT, rep_first TEXT, rep_last TEXT, business_unit TEXT, region TEXT, sales_channel TEXT,
+            emp_id TEXT, rep_first TEXT, rep_last TEXT, rep_email TEXT,
+            business_unit TEXT, region TEXT, sales_channel TEXT,
             payment_type TEXT, prepay_pct REAL DEFAULT 0,
             subtotal REAL DEFAULT 0, total_discount REAL DEFAULT 0, total_tax REAL DEFAULT 0, grand_total REAL DEFAULT 0,
             exception_reason TEXT, sales_notes TEXT,
@@ -266,6 +267,17 @@ def init_db():
                 else:
                     time.sleep(0.15)
 
+    # Lightweight migrations for columns added after first release
+    conn = get_conn()
+    try:
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(submissions)").fetchall()]
+        if "rep_email" not in cols:
+            conn.execute("ALTER TABLE submissions ADD COLUMN rep_email TEXT")
+            conn.commit()
+    except Exception:
+        pass
+    conn.close()
+
     conn = get_conn()
     # Seed config lists
     for key, vals in DEFAULT_CONFIGS.items():
@@ -323,11 +335,14 @@ def get_admin_display(username: str) -> str:
 
 # ─── Config helpers ──────────────────────────────────────────────────────────
 def get_config(key: str) -> List[str]:
-    conn = get_conn()
-    row = conn.execute("SELECT value_json FROM config_lists WHERE key=?", (key,)).fetchone()
-    conn.close()
-    if row:
-        return json.loads(row["value_json"])
+    try:
+        conn = get_conn()
+        row = conn.execute("SELECT value_json FROM config_lists WHERE key=?", (key,)).fetchone()
+        conn.close()
+        if row:
+            return json.loads(row["value_json"])
+    except Exception:
+        pass
     return []
 
 def set_config(key: str, values: List[str]):
@@ -448,11 +463,11 @@ def create_submission(data: Dict[str, Any]) -> int:
             cust_street, cust_city, cust_state, cust_zip,
             property_sqft, areas_serviced, grass_type, special_params,
             services_json,
-            emp_id, rep_first, rep_last, business_unit, region, sales_channel,
+            emp_id, rep_first, rep_last, rep_email, business_unit, region, sales_channel,
             payment_type, prepay_pct,
             subtotal, total_discount, total_tax, grand_total,
             exception_reason, sales_notes
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """,
         (
             now, now, "pending",
@@ -464,7 +479,8 @@ def create_submission(data: Dict[str, Any]) -> int:
             data.get("grass_type"), json.dumps(data.get("special_params", [])),
             json.dumps(data.get("services", [])),
             data.get("emp_id"), data.get("rep_first"), data.get("rep_last"),
-            data.get("business_unit"), data.get("region"), data.get("sales_channel"),
+            data.get("rep_email"), data.get("business_unit"), data.get("region"),
+            data.get("sales_channel"),
             data.get("payment_type"), data.get("prepay_pct", 0),
             data.get("subtotal", 0), data.get("total_discount", 0),
             data.get("total_tax", 0), data.get("grand_total", 0),
@@ -489,11 +505,15 @@ def update_submission_status(
 ) -> bool:
     conn = get_conn()
     now = _now()
-    row = conn.execute("SELECT emp_id, status FROM submissions WHERE id=?", (sid,)).fetchone()
+    row = conn.execute(
+        "SELECT emp_id, status, rep_email, cust_first, cust_last FROM submissions WHERE id=?",
+        (sid,)
+    ).fetchone()
     if not row:
         conn.close()
         return False
 
+    old_status = row["status"]
     conn.execute(
         """
         UPDATE submissions SET
@@ -501,10 +521,11 @@ def update_submission_status(
             kick_reason = ?, processed_at = ?, notified = 0
         WHERE id = ?
         """,
-        (new_status, now, actor, admin_notes, kick_reason, now if new_status in ("completed", "kicked") else None, sid)
+        (new_status, now, actor, admin_notes, kick_reason,
+         now if new_status in ("completed", "kicked") else None, sid)
     )
-    # Notification to sales rep
-    msg = f"Your sale submission #{sid} status changed from '{row['status']}' to '{new_status}'."
+    # In-app notification
+    msg = f"Your sale submission #{sid} status changed from '{old_status}' to '{new_status}'."
     if kick_reason:
         msg += f" Kick reason: {kick_reason}"
     if admin_notes:
@@ -519,6 +540,24 @@ def update_submission_status(
     )
     conn.commit()
     conn.close()
+
+    # Email notification (best-effort, never blocks workflow)
+    try:
+        from utils.email_notify import send_status_email
+        to_email = row["rep_email"] or ""
+        cust = f"{row['cust_first'] or ''} {row['cust_last'] or ''}".strip()
+        send_status_email(
+            to_email=to_email,
+            submission_id=sid,
+            old_status=old_status,
+            new_status=new_status,
+            customer_name=cust,
+            admin_notes=admin_notes,
+            kick_reason=kick_reason,
+        )
+    except Exception:
+        pass
+
     return True
 
 def get_submissions(
